@@ -1,0 +1,4 @@
+mean_image<-function()
+{
+    
+}
