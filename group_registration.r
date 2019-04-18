@@ -7,9 +7,11 @@ library(RcppParallel)
 library(parallelDist)
 Sys.setenv(ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS = 64)
 setwd("/home/sugon/Group_Reg/files")
-source("../find_distance.R")
-source("../createParentTable.r")
-source("../patch_voxel.r")
+source("../code/find_distance.R")
+# source("../code/createParentTable.r")
+source("../code/patch_voxel.r")
+source("../code/notlargerthan.R")
+
 
 # Node Class
 node <- setClass(
@@ -31,14 +33,12 @@ node <- setClass(
 # Init Params
 r<-1
 iter<-20
-size<-c(256,256,188)
 # Bottomright point coor
-coor<-size
 assign("N", 100, envir = .GlobalEnv)
-patch_size <- coor #patch size is a vector
 
 # Img index of rank of dist to others, increasing. 
-distance <- find_distance(0)
+#distance <- find_distance(0)
+distance <- read.csv("distance.csv")
 d_sum <- rowSums(distance)
 dist_order <- order(d_sum)
 
@@ -48,27 +48,112 @@ delta_r<-max(distance[dist_order[1],])
 
 # Init closet mean image
 mean_node <- node(pos = dist_order[1])
-M<-antsImageRead(paste("ext", mean_node@pos, ".nii.gz", sep = ""))     
+M<-antsImageRead(paste("ext", mean_node@pos, ".nii.gz", sep = ""))    
+
+size<-dim(M)
+coor <- size
+patch_size <- coor
+b <- min(size)
+b <- round(b*(1-1/iter))+1
+r <- r+delta_r*(1/iter)
+
 
 # Init
-d <- array()
-d[mean_node@pos] <- 0
+# d <- array()
+# d[mean_node@pos] <- 0
 mean_vec <- as.vector(M[])
 M_data <- 0
-omega <- c()
-omega_sum <- 0
 reg_data <- array()
-for(i in seq(N))
+covered_areas <- list()
+area_num <- 1
+last_notcovered <- c()
+covered_x <- 0
+covered_y <- 0
+covered_z <- 0
+i <- 1
+j <- 1
+k <- 1
+omega <- c()
+
+
+for(num in seq(N))
 {
-  if(i==mean_node@pos)next
-  reged <- flirt(infile = paste("ext", i, ".nii.gz", sep = ""), reffile = paste("ext", mean_node@pos, ".nii.gz", sep = ""), outfile = paste0("mov0-", i), dof = 12)
-  d[i] <- as.numeric(parallelDist(rbind(as.vector(reged[]), mean_vec)))
-  omega[i] <- exp(-d[i]/10000000)
+  print(paste("Calculating", num))
+  if(num==mean_node@pos)next
+  # img <- flirt(infile = paste("ext", num), reffile = paste("ext", mean_node@pos), outfile = paste0("mov0-", num), dof = 12)
+  img <- readnii(paste0("mov0-", num, ".nii.gz"))
+  patch <- 1
+  omega_ind <- c()
+  
+  while(T)
+  {
+    while(T)
+    {
+      while(T)
+      {
+        print(paste("> Calculating patch", i, j, k))
+        img_patch <- img[i:(i+b), j:(j+b), k:(k+b)]
+        M_patch <- M[i:(i+b), j:(j+b), k:(k+b)]
+        d <- parallelDist(rbind(as.vector(img_patch), as.vector(M_patch)))
+        omega_ind <- c(omega_ind, d)
+
+        if(k+2*b<size[3])k <- k+b
+        else if(k!=size[3]-b)
+        {
+          if(k>=size[3]-2*b)covered_z <- (size[3]-b):(b+k)
+          k <- size[3]-b
+        }
+        else
+        {
+          k <- 1
+          break
+        }
+      }
+      if(j+2*b<size[2])j <- j+b
+      else if(j!=size[2]-b)
+      {
+        if(j>=size[2]-2*b)covered_y <- (size[2]-b):(b+j)
+        j <- size[2]-b
+      }
+      else 
+      {
+        j <- 1
+        break
+      }
+    }
+    if(i+2*b<size[1])i <- i+b
+    else if(i!=size[1]-b)
+    {
+      if(i>=size[1]-2*b)covered_x <- (size[1]-b):(b+i)
+      i <- size[1]-b
+    }
+    else 
+    {
+      i <- 1
+      break
+    }
+  }
+  omega <- cbind(omega, omega_ind)
 }
 write.csv(omega, "omega.csv", row.names = F)
-omega_sum <- sum(omega)
-M_data <- 0
-ksai <- c()
+patch_num <- dim(omega)[1]
+omega_sum <- apply(omega, 1, sum)
+omega <- omega/omega_sum
+write.csv(omega, "omega_std.csv", row.names = F)
+
+# calculate phai
+# get phai[patchsize, N-1]
+
+# Average covered area
+for(i in seq(length(covered_areas)))
+{
+  
+}
+
+
+
+
+
 for(i in seq(N))
 {
   if(i == mean_node@pos)next;
@@ -90,7 +175,7 @@ for(i in seq(100))
   if(i==93)next
   img <- readnii(paste0("mov0-", i))
   d[i] <- as.numeric(parallelDist(rbind(as.vector(img[]), mean_vec)))
-  omega[i] <- exp(-d[i]/1000000)
+  omega[i] <- exp(-d[i]/r)
   print(paste("finish", i))
 }
 
@@ -148,7 +233,7 @@ for(t in 1:iter)
       
     
     # MST BFS registration
-    while()
+    while(T)
     {
       tar@child <- getChild(mean_node)
       for(i in tar@child)
@@ -182,7 +267,6 @@ for(t in 1:iter)
     } 
     
     # Update M
-    M <- 
     
     
 }
