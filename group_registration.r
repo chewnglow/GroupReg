@@ -11,6 +11,7 @@ source("../code/find_distance.R")
 # source("../code/createParentTable.r")
 source("../code/patch_voxel.r")
 source("../code/notlargerthan.R")
+source("../code/cal_weight.R")
 
 
 # Node Class
@@ -61,96 +62,40 @@ r <- r+delta_r*(1/iter)
 # Init
 # d <- array()
 # d[mean_node@pos] <- 0
-mean_vec <- as.vector(M[])
-M_data <- 0
-reg_data <- array()
-covered_areas <- list()
+patches <- list(img=NULL, x=array(), y=array(), z=array())
 area_num <- 1
-last_notcovered <- c()
 covered_x <- 0
 covered_y <- 0
 covered_z <- 0
 i <- 1
 j <- 1
 k <- 1
+n_x <- 1
+n_y <- 1
+n_z <- 1
 omega <- c()
+k_reached <- F
 
+omega <- cal_weight(img, M)
 
-for(num in seq(N))
-{
-  print(paste("Calculating", num))
-  if(num==mean_node@pos)next
-  # img <- flirt(infile = paste("ext", num), reffile = paste("ext", mean_node@pos), outfile = paste0("mov0-", num), dof = 12)
-  img <- readnii(paste0("mov0-", num, ".nii.gz"))
-  patch <- 1
-  omega_ind <- c()
-  
-  while(T)
-  {
-    while(T)
-    {
-      while(T)
-      {
-        print(paste("> Calculating patch", i, j, k))
-        img_patch <- img[i:(i+b), j:(j+b), k:(k+b)]
-        M_patch <- M[i:(i+b), j:(j+b), k:(k+b)]
-        d <- parallelDist(rbind(as.vector(img_patch), as.vector(M_patch)))
-        omega_ind <- c(omega_ind, d)
-
-        if(k+2*b<size[3])k <- k+b
-        else if(k!=size[3]-b)
-        {
-          if(k>=size[3]-2*b)covered_z <- (size[3]-b):(b+k)
-          k <- size[3]-b
-        }
-        else
-        {
-          k <- 1
-          break
-        }
-      }
-      if(j+2*b<size[2])j <- j+b
-      else if(j!=size[2]-b)
-      {
-        if(j>=size[2]-2*b)covered_y <- (size[2]-b):(b+j)
-        j <- size[2]-b
-      }
-      else 
-      {
-        j <- 1
-        break
-      }
-    }
-    if(i+2*b<size[1])i <- i+b
-    else if(i!=size[1]-b)
-    {
-      if(i>=size[1]-2*b)covered_x <- (size[1]-b):(b+i)
-      i <- size[1]-b
-    }
-    else 
-    {
-      i <- 1
-      break
-    }
-  }
-  omega <- cbind(omega, omega_ind)
-}
+rm(img);rm(img_patch);rm(M_patch)
 write.csv(omega, "omega.csv", row.names = F)
 patch_num <- dim(omega)[1]
 omega_sum <- apply(omega, 1, sum)
 omega <- omega/omega_sum
 write.csv(omega, "omega_std.csv", row.names = F)
+covered <- c(n_z+1, n_z+n_y+2, n_x)
 
 # calculate phai
-# get phai[patchsize, N-1]
-
-# Average covered area
-for(i in seq(length(covered_areas)))
+for(i in seq(N))
 {
   
 }
 
-
+# Construct mean image
+M_data <- array(0, dim = size)
+for(i in patches)
+  M_data[patches$x, patches$y, patches$z] <- (M_data[patches$x, patches$y, patches$z]+patches[[i]]$img)/2
 
 
 
