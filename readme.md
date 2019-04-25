@@ -1,1 +1,1 @@
-An project creating an atlas by MST-based groupwise registration.
+
