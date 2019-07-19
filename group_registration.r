@@ -2,16 +2,20 @@ library(ANTsRCore)
 library(ANTsR)
 library(extrantsr)
 library(fslr)
-library(Rcpp)
+library(Rcpp)3686＊
 library(RcppParallel)
 library(parallelDist)
-Sys.setenv(ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS = 64)
+library(rlist)
+library(optrees)
+Sys.setenv(ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS = 48)
 setwd("/home/sugon/Group_Reg/files")
 source("../code/find_distance.R")
 # source("../code/createParentTable.r")
 source("../code/patch_voxel.r")
 source("../code/notlargerthan.R")
 source("../code/cal_weight.R")
+source("../code/cal_phai.R")
+options(digits = 9)
 
 
 # Node Class
@@ -21,13 +25,15 @@ node <- setClass(
     pos = "numeric",
     parent = "numeric",
     child = "vector",
-    level = "numeric"
+    level = "numeric",
+    viewed = "logical"
   ),
   prototype = list(
     pos = 0,
     parent = 0,
     child = vector(),
-    level = 0
+    level = 0,
+    viewed = FALSE
   )
 )
 
@@ -42,90 +48,43 @@ assign("N", 100, envir = .GlobalEnv)
 distance <- read.csv("distance.csv")
 d_sum <- rowSums(distance)
 dist_order <- order(d_sum)
-
+t <- 0
 # Init delta_r = max distance 2 other images
 
 delta_r<-max(distance[dist_order[1],])
 
 # Init closet mean image
 mean_node <- node(pos = dist_order[1])
-M<-antsImageRead(paste("ext", mean_node@pos, ".nii.gz", sep = ""))    
+M_init<-antsImageRead(paste("ext", mean_node@pos, ".nii.gz", sep = ""))    
 
-size<-dim(M)
+# Image size
+assign("size", dim(M_init), envir = .GlobalEnv)
+# patch size
 coor <- size
+# ?
 patch_size <- coor
 b <- min(size)
 b <- round(b*(1-1/iter))+1
 r <- r+delta_r*(1/iter)
 
-
 # Init
 # d <- array()
 # d[mean_node@pos] <- 0
-patches <- list(img=NULL, x=array(), y=array(), z=array())
-area_num <- 1
-covered_x <- 0
-covered_y <- 0
-covered_z <- 0
-i <- 1
-j <- 1
-k <- 1
-n_x <- 1
-n_y <- 1
-n_z <- 1
-omega <- c()
-k_reached <- F
 
-omega <- cal_weight(img, M)
-
-rm(img);rm(img_patch);rm(M_patch)
-write.csv(omega, "omega.csv", row.names = F)
-patch_num <- dim(omega)[1]
-omega_sum <- apply(omega, 1, sum)
-omega <- omega/omega_sum
-write.csv(omega, "omega_std.csv", row.names = F)
-covered <- c(n_z+1, n_z+n_y+2, n_x)
-
-# calculate phai
-for(i in seq(N))
-{
-  
-}
-
-# Construct mean image
-M_data <- array(0, dim = size)
-for(i in patches)
-  M_data[patches$x, patches$y, patches$z] <- (M_data[patches$x, patches$y, patches$z]+patches[[i]]$img)/2
-
-
-
-for(i in seq(N))
-{
-  if(i == mean_node@pos)next;
-  reged <- antsImageRead(paste0("mov0-", i, ".nii.gz"))
-  omega[i] <- omega[i]/omega_sum
-  ksai[i] <- omega[i]/prod(patch_size)
-  M_data <- M_data + ksai[i]*reged[]
-  print(paste(i, "merged"))
-}
-M1 <- makeImage(voxval = M_data/N, imagesize = dim(M), origin = antsGetOrigin(M), direction = antsGetDirection(M), pixeltype = "float", spacing = antsGetSpacing(M))
-M <- M1
-rm("M1")
+# patches: all individual patches matrix values & coordinate range, coor: center coordinate of patches
+# patches: 8*99=792 elements, coor: logical patches @ current b&r
+omega_list <- cal_weight(M_init, mean_node@pos, r, t)
+M <- makeImage(voxval = cal_mean(omega_list$omega, omega_list$patches, omega_list$omega_coor)
+          , imagesize = size, origin = antsGetOrigin(M_init), direction = antsGetDirection(M_init), pixeltype = "float", spacing = antsGetSpacing(M_init))
+#M <- makeImage(voxval = cal_mean(M, omega_list$omega, omega_list$patches, omega_list$omega_coor)
+#               , imagesize = size, origin = antsGetOrigin(M), direction = antsGetDirection(M), pixeltype = "float", spacing = antsGetSpacing(M))
 antsImageWrite(M, "M0.nii.gz")
-M_data <- 0
 
+rm("omega_list")
 
-for(i in seq(100))
-{
-  if(i==93)next
-  img <- readnii(paste0("mov0-", i))
-  d[i] <- as.numeric(parallelDist(rbind(as.vector(img[]), mean_vec)))
-  omega[i] <- exp(-d[i]/r)
-  print(paste("finish", i))
-}
 
 # Iteration
-for(t in 1:iter)                         
+for(t in seq(iter))                         
 {
   # t-1 
   # Build reg MST
@@ -139,10 +98,15 @@ for(t in 1:iter)
   MST<-msTreeKruskal(1:101, vec)
   tree <- MST$tree.arcs
   
-    # Weight for each img                 
+  # Cal weight & r        
+  omega_list <- cal_weight(M, mean_node@pos, r, t)
+  r<-r+delta_r*(t/iter)
+  
+  
+  omega_list <- c()
     for(s in 1:N)                                   
     {
-      if(t==1)
+      if(t==0)
         img<-antsImageRead(paste("ext", s, ".nii.gz", sep = ""))
       else
         img<-antsImageRead(paste("mov", t-1, "-", s, ".nii.gz", sep = "")) 
@@ -169,9 +133,12 @@ for(t in 1:iter)
     for(s in seq(N)) 
         for(patch_num in seq(total_patch))
             omega[patch_num, s]<-omega[patch_num, s]/omega_sum[patch_num]
-    r<-r+delta_r*(t/iter)
     
-    # Compute mean image
+    
+  # Compute mean image
+  M <- makeImage(voxval = cal_mean(M, omega_list$omega, omega_list$patches, omega_list$omega_coor)
+               , imagesize = size, origin = antsGetOrigin(M), direction = antsGetDirection(M), pixeltype = "float", spacing = antsGetSpacing(M))
+  
     M_data<-M_data+sum(((sum(omega[seq(total_patch), s]))/prod(coor))*img[])
     M<-makeImage(voxval = M_data, origin = antsGetOrigin(M), direction = antsGetDirection(M), pixeltype = float, spacing = antsGetSpacing(M))
     antsImageWrite(M, paste("mean", t, ".nii.gz", sep = ""))

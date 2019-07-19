@@ -2,7 +2,7 @@ find_distance<-function(t, M=NULL)
 {
   setwd("/home/sugon/Group_Reg/files/")
   result <- c()
-  # Calculate distance between each otherz
+  # Calculate distance between each other
   if(t==0)
   {
     for(i in seq(N))
